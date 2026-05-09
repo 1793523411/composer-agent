@@ -1,0 +1,32 @@
+{
+  "name": "cursor-agent-local-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.tsx",
+    "once": "tsx src/main.tsx --once"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.10",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "diff": "^9.0.0",
+    "dotenv": "^16.5.0",
+    "glob": "^13.0.6",
+    "ink": "^5.2.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^18.3.1",
+    "zod": "^4.4.1"
+  },
+  "devDependencies": {
+    "@types/diff": "^8.0.0",
+    "@types/node": "^22.14.0",
+    "@types/react": "^18.3.18",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
