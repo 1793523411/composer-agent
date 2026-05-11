@@ -6,6 +6,7 @@ export interface MultilineInputProps {
   onChange?: (text: string) => void;
   showCursor?: boolean;
   busy?: boolean;
+  disabled?: boolean;
   history?: string[];
 }
 
@@ -14,6 +15,7 @@ export function MultilineInput({
   onChange,
   showCursor = true,
   busy = false,
+  disabled = false,
   history = [],
 }: MultilineInputProps) {
   useFocus({ autoFocus: true });
@@ -50,6 +52,8 @@ export function MultilineInput({
   useInput(
     useCallback(
       (input: string, key) => {
+        if (disabled) return;
+
         // Meta+Enter 或反斜杠+Enter: 插入换行
         if (key.return && key.meta) {
           const before = text.slice(0, cursorPos);
@@ -169,7 +173,7 @@ export function MultilineInput({
           setHistoryIndex(null);
         }
       },
-      [history, historyIndex, text, cursorOffset, cursorPos, onSubmit],
+      [disabled, history, historyIndex, text, cursorOffset, cursorPos, onSubmit],
     ),
   );
 
@@ -191,7 +195,9 @@ export function MultilineInput({
       >
         {prompt}
         {showCursor ? <Text inverse> </Text> : null}
-        <Text dimColor>{showCursor ? "  " : ""}Ask about code, edits, tests, or plans</Text>
+        <Box flexShrink={1}>
+          <Text dimColor wrap="truncate-end">{showCursor ? "  " : ""}Ask about code, edits, tests, or plans</Text>
+        </Box>
       </Box>
     );
   }

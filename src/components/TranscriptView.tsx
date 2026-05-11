@@ -2,7 +2,6 @@ import { Box, Text } from "ink";
 import type { TranscriptItem } from "../lib/transcript.js";
 import { ToolUseDisplay } from "./ToolUseDisplay.js";
 import { MarkdownText } from "./MarkdownText.js";
-import { ThinkingDisplay } from "./ThinkingDisplay.js";
 
 const ASSISTANT_DOT = "\u25CF";
 const USER_CHEVRON = "\u276F";
@@ -62,18 +61,17 @@ export function TranscriptView({
   items,
   columns,
   hideThinking,
-  streamingThinking,
-  isLoading,
   expanded = false,
 }: {
   items: TranscriptItem[];
   columns: number;
   hideThinking: boolean;
-  streamingThinking?: string | null;
-  isLoading?: boolean;
   expanded?: boolean;
 }) {
   const w = Math.max(40, columns - 2);
+  const assistantColumns = Math.max(20, w - 4);
+  const systemColumns = Math.max(20, w - 5);
+  const toolColumns = Math.max(20, w - 3);
   const visibleItems = expanded ? items : collapseTools(items);
 
   return (
@@ -114,8 +112,12 @@ export function TranscriptView({
         if (it.kind === "system") {
           return (
             <Box key={it.id} marginTop={mt} flexDirection="row" width="100%">
-              <Text dimColor>{`  ${TOOL_CHILD}  `}</Text>
-              <Text dimColor wrap="wrap">{it.text}</Text>
+              <Box minWidth={5} flexShrink={0}>
+                <Text dimColor>{`  ${TOOL_CHILD}  `}</Text>
+              </Box>
+              <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+                <MarkdownText columns={systemColumns} dimColor>{it.text}</MarkdownText>
+              </Box>
             </Box>
           );
         }
@@ -149,6 +151,7 @@ export function TranscriptView({
                 output={it.result && it.status === "completed" ? it.result : undefined}
                 error={it.result && it.status === "error" ? it.result : undefined}
                 expanded={expanded}
+                columns={toolColumns}
               />
             </Box>
           );
@@ -160,9 +163,9 @@ export function TranscriptView({
               <Box minWidth={3} flexShrink={0}>
                 <Text dimColor>{ASSISTANT_DOT} </Text>
               </Box>
-              <Box paddingLeft={0} flexDirection="column" flexGrow={1} flexShrink={1}>
+              <Box paddingLeft={1} flexDirection="column" flexGrow={1} flexShrink={1}>
                 {it.text.trim() ? (
-                  <MarkdownText>{it.text}</MarkdownText>
+                  <MarkdownText columns={assistantColumns}>{it.text}</MarkdownText>
                 ) : null}
               </Box>
             </Box>
@@ -171,24 +174,6 @@ export function TranscriptView({
 
         return null;
       })}
-      {streamingThinking ? (() => {
-        const last = items[items.length - 1];
-        const stMt = last && (last.kind === "thinking" || last.kind === "tool" || last.kind === "assistant") ? 0 : 1;
-        return (
-          <Box marginTop={stMt}>
-            <ThinkingDisplay
-              thinking={streamingThinking}
-              isStreaming={true}
-              verbose={!hideThinking}
-            />
-          </Box>
-        );
-      })() : null}
-      {isLoading && !streamingThinking && (
-        <Box marginTop={0} paddingLeft={2}>
-          <Text italic dimColor>Thinking…</Text>
-        </Box>
-      )}
     </Box>
   );
 }

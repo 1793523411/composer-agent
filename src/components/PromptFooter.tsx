@@ -41,26 +41,42 @@ export function PromptFooter({
   const hint = inputActive
     ? "Enter send · Opt+Enter newline · Esc clear"
     : `? shortcuts · ${transcriptHint} · / commands · ↑ history`;
+  const toolLabel = toolCount === 0 ? "all tools" : `${toolCount} tools`;
+  const thinkingLabel = hideThinking ? "thinking hidden" : "thinking visible";
+  const transcriptLabel = expandedTranscript ? "expanded" : "compact";
+
+  if (narrow) {
+    return (
+      <Box flexDirection="column" paddingLeft={2} paddingRight={1}>
+        <Text dimColor wrap="truncate-end">{busy ? "Working" : hint}</Text>
+        <Text wrap="truncate-end">
+          <Text color={modeColor(permissionMode)}>{permissionMode}</Text>
+          <Text dimColor>{" · "}</Text>
+          <Text>{compactModel(model)}</Text>
+          <Text dimColor>{` · ${project} · ${toolLabel} · ${thinkingLabel} · ${transcriptLabel}`}</Text>
+        </Text>
+      </Box>
+    );
+  }
 
   return (
     <Box
-      flexDirection={narrow ? "column" : "row"}
-      justifyContent={narrow ? "flex-start" : "space-between"}
+      flexDirection="row"
+      justifyContent="space-between"
       paddingLeft={2}
       paddingRight={1}
-      gap={narrow ? 0 : 1}
+      gap={1}
     >
       <Box flexShrink={1}>
         <Text dimColor>{busy ? "Working" : hint}</Text>
-        {!narrow ? <Text dimColor>{" · "}</Text> : null}
+        <Text dimColor>{" · "}</Text>
         <Text color={modeColor(permissionMode)}>{permissionMode}</Text>
         <Text dimColor>{" · "}</Text>
         <Text>{compactModel(model)}</Text>
       </Box>
       <Box flexShrink={1}>
         <Text dimColor wrap="truncate-end">
-          {project} · {toolCount === 0 ? "all tools" : `${toolCount} tools`} · {hideThinking ? "thinking hidden" : "thinking visible"}
-          {expandedTranscript ? " · expanded" : " · compact"}
+          {project} · {toolLabel} · {thinkingLabel} · {transcriptLabel}
         </Text>
       </Box>
     </Box>

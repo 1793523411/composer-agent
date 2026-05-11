@@ -60,6 +60,12 @@ const commands: SlashCommand[] = [
   },
 ];
 
+const extraSlashCommands: { name: string; description: string }[] = [
+  { name: "cwd", description: "显示当前工作目录" },
+  { name: "think", description: "显示或隐藏 thinking 过程" },
+  { name: "quit", description: "退出程序" },
+];
+
 // ─── 帮助文本常量 ───────────────────────────────────────────
 
 export const SLASH_HELP: string = [
@@ -67,16 +73,17 @@ export const SLASH_HELP: string = [
   "  Ctrl+O — 展开/收起 transcript 里的工具详情",
   "",
   "可用命令:",
-  ...commands.map((c) => `  /${c.name} — ${c.description}`),
+  ...[
+    ...commands.map((c) => ({ name: c.name, description: c.description })),
+    ...extraSlashCommands,
+  ].map((c) => `  /${c.name} — ${c.description}`),
 ].join("\n");
 
 /** 获取所有命令名称和描述（用于补全建议） */
 export function getSlashCommands(): { name: string; description: string }[] {
   return [
     ...commands.map((c) => ({ name: c.name, description: c.description })),
-    { name: "cwd", description: "显示当前工作目录" },
-    { name: "think", description: "显示或隐藏 thinking 过程" },
-    { name: "quit", description: "退出程序" },
+    ...extraSlashCommands,
   ];
 }
 
@@ -109,7 +116,7 @@ export interface SlashHandlers {
   clear: () => void;
   exit: () => void;
   cwd: () => void;
-  model: () => void;
+  model: (nextModel?: string) => void;
   compact: (keep: number) => void;
   thinkToggle: () => void;
 }
@@ -140,7 +147,7 @@ export function handleSlashCommand(
       handlers.cwd();
       return { type: "handled", name };
     case "model":
-      handlers.model();
+      handlers.model(args.trim() || undefined);
       return { type: "handled", name };
     case "compact": {
       const keep = parseInt(args, 10) || 20;

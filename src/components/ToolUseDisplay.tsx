@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Box, Text } from "ink";
+import { MarkdownText } from "./MarkdownText.js";
 
 const TOOL_DOT = "\u25CF";
 const SPINNER_FRAMES = ["\u00B7", "\u2722", "\u2733", "\u2736", "\u273B", "\u273D", "\u273B", "\u2736", "\u2733", "\u2722"];
@@ -29,6 +30,7 @@ export interface ToolUseDisplayProps {
   output?: string;
   error?: string;
   expanded?: boolean;
+  columns?: number;
 }
 
 function formatInputInline(input: Record<string, unknown>): string {
@@ -132,34 +134,36 @@ function parseJsonish(value: string): unknown | undefined {
   }
 }
 
-function collectReadableBlocks(value: unknown, depth = 0): string[] {
+function collectReadableBlocks(value: unknown, depth = 0, allowMetadataSummary = true): string[] {
   if (value == null || depth > 5) return [];
 
   if (typeof value === "string") {
     const parsed = parseJsonish(value);
     if (parsed !== undefined) {
-      const nested = collectReadableBlocks(parsed, depth + 1);
+      const nested = collectReadableBlocks(parsed, depth + 1, false);
       if (nested.length > 0) return nested;
     }
     return [value];
   }
 
   if (Array.isArray(value)) {
-    return value.flatMap((item) => collectReadableBlocks(item, depth + 1));
+    return value.flatMap((item) => collectReadableBlocks(item, depth + 1, allowMetadataSummary));
   }
 
   if (!isRecord(value)) {
     return [String(value)];
   }
 
-  const directKeys = ["content", "text", "output", "stdout", "stderr", "message"];
+  const directKeys = ["content", "text", "output", "stdout", "stderr", "message", "value", "data", "result"];
   for (const key of directKeys) {
-    const nested = collectReadableBlocks(value[key], depth + 1);
+    const nested = collectReadableBlocks(value[key], depth + 1, allowMetadataSummary);
     if (nested.length > 0) return nested;
   }
 
-  if (typeof value.summary === "string") return [value.summary];
-  if (typeof value.type === "string") return [value.type];
+  if (allowMetadataSummary) {
+    if (typeof value.summary === "string") return [value.summary];
+    if (typeof value.type === "string") return [value.type];
+  }
 
   return [];
 }
@@ -207,13 +211,22 @@ function formatExpandedText(toolName: string, value: string): string[] {
   ];
 }
 
-export function ToolUseDisplay({ toolName, status, input, output, error, expanded = false }: ToolUseDisplayProps) {
+export function ToolUseDisplay({
+  toolName,
+  status,
+  input,
+  output,
+  error,
+  expanded = false,
+  columns = 80,
+}: ToolUseDisplayProps) {
   const dotColor = status === "done" ? "gray" : status === "error" ? "red" : "cyan";
   const spinnerIdx = useSpinner(status === "running");
   const inputSummary = input && Object.keys(input).length > 0 ? formatInputInline(input) : null;
   const label = displayToolName(toolName);
   const expandedOutput = expanded && status === "done" && output ? formatExpandedText(toolName, output) : [];
   const expandedError = expanded && status === "error" && error ? formatExpandedText(toolName, error) : [];
+  const detailColumns = Math.max(20, columns - 5);
 
   const [startTime] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState(0);
@@ -246,9 +259,7 @@ export function ToolUseDisplay({ toolName, status, input, output, error, expande
 
       {expandedOutput.length > 0 && (
         <Box flexDirection="column" paddingLeft={5}>
-          {expandedOutput.map((line, idx) => (
-            <Text key={idx} dimColor wrap="wrap">{line.length > 0 ? line : " "}</Text>
-          ))}
+          <MarkdownText columns={detailColumns} dimColor>{expandedOutput.join("\n")}</MarkdownText>
         </Box>
       )}
 
@@ -261,9 +272,7 @@ export function ToolUseDisplay({ toolName, status, input, output, error, expande
 
       {expandedError.length > 1 && (
         <Box flexDirection="column" paddingLeft={5}>
-          {expandedError.slice(1).map((line, idx) => (
-            <Text key={idx} color="red" wrap="wrap">{line.length > 0 ? line : " "}</Text>
-          ))}
+          <MarkdownText columns={detailColumns} dimColor>{expandedError.slice(1).join("\n")}</MarkdownText>
         </Box>
       )}
     </Box>

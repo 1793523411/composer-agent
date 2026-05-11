@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useFocus, useInput } from "ink";
 
 export interface PermissionPromptProps {
   toolName: string;
@@ -8,6 +8,8 @@ export interface PermissionPromptProps {
 }
 
 export function PermissionPrompt({ toolName, description, onDecision }: PermissionPromptProps) {
+  useFocus({ autoFocus: true });
+
   useInput((input, key) => {
     if (input === "y" || key.return) {
       onDecision("allow");

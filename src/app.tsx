@@ -99,10 +99,14 @@ export function App({
   const [footerHint, setFooterHint] = useState<string | null>(null);
   const [hideThinking, setHideThinking] = useState(!verbose);
   const [expandedTranscript, setExpandedTranscript] = useState(false);
-  const [streamingThinking, setStreamingThinking] = useState<string | null>(null);
   const [currentInput, setCurrentInput] = useState("");
   const [inputHistory, setInputHistory] = useState<string[]>([]);
+  const [activeModel, setActiveModel] = useState(model);
   const allowedToolsKey = allowedTools.join(",");
+
+  useEffect(() => {
+    setActiveModel(model);
+  }, [model]);
 
   useInput((input, key) => {
     const normalized = input.toLowerCase();
@@ -181,6 +185,9 @@ export function App({
     }
 
     let cancelled = false;
+    setReady(false);
+    setBootError(null);
+    setPermissionRequest(null);
     void (async () => {
       try {
         // 非 bypass 模式时启动权限 IPC server
@@ -199,7 +206,7 @@ export function App({
 
         const agent = await Agent.create({
           apiKey,
-          model: { id: model },
+          model: { id: activeModel },
           local: { cwd },
           mcpServers: {
             "composer-tools": {
@@ -240,7 +247,7 @@ export function App({
         permissionCloseRef.current = null;
       }
     };
-  }, [allowedToolsKey, cols, continueSession, cwd, model, permissionMode]);
+  }, [activeModel, allowedToolsKey, cols, continueSession, cwd, permissionMode]);
 
   const appendItem = useCallback((it: TranscriptItem) => {
     setItems((prev) => [...prev, it]);
@@ -312,7 +319,7 @@ export function App({
       const thinkingIdRef = { current: null as string | null };
       let assistantText = "";
       setBusy(true);
-      setFooterHint(null);
+      setFooterHint("waiting for model");
 
       try {
         const run: Run = await agent.send(messageText, {
@@ -345,10 +352,8 @@ export function App({
                 const tid = nextId();
                 thinkingIdRef.current = tid;
                 appendItem({ kind: "thinking", id: tid, text: piece });
-                setStreamingThinking(piece);
               } else {
                 updateThinking(thinkingIdRef.current, (p) => p + piece);
-                setStreamingThinking((prev) => (prev ?? "") + piece);
               }
               break;
             }
@@ -382,7 +387,6 @@ export function App({
       } finally {
         setBusy(false);
         setFooterHint(null);
-        setStreamingThinking(null);
         persistSession();
       }
     },
@@ -412,12 +416,30 @@ export function App({
             id: nextId(),
             text: `工作目录：\n${cwd}`,
           }),
-        model: () =>
+        model: (nextModel?: string) => {
+          if (!nextModel) {
+            appendItem({
+              kind: "system",
+              id: nextId(),
+              text: `当前模型 id：${activeModel}\n用法：/model <model_id>`,
+            });
+            return;
+          }
+          if (nextModel === activeModel) {
+            appendItem({
+              kind: "system",
+              id: nextId(),
+              text: `当前已是模型：${activeModel}`,
+            });
+            return;
+          }
+          setActiveModel(nextModel);
           appendItem({
             kind: "system",
             id: nextId(),
-            text: `当前模型 id：${model}`,
-          }),
+            text: `模型已切换为：${nextModel}\n正在重连 Agent…`,
+          });
+        },
         compact: (keep: number) => {
           const sessionCount = sessionMessagesRef.current.length;
           if (sessionCount > keep) {
@@ -485,7 +507,7 @@ export function App({
 
       void runAgentPrompt(v);
     },
-    [appendItem, cwd, exit, model, persistSession, runAgentPrompt],
+    [activeModel, appendItem, cwd, exit, persistSession, runAgentPrompt],
   );
 
   const slashSuggestions = !busy && currentInput.startsWith("/")
@@ -521,10 +543,10 @@ export function App({
         paddingLeft={1}
         paddingTop={items.length === 0 && !busy ? 1 : 0}
       >
-        {items.length === 0 && !busy && (
+        {items.length === 0 && !busy && slashSuggestions.length === 0 && (
           <WelcomeScreen
             cwd={cwd}
-            model={model}
+            model={activeModel}
             permissionMode={permissionMode}
             allowedTools={allowedTools}
             columns={cols}
@@ -535,8 +557,6 @@ export function App({
             items={items}
             columns={cols}
             hideThinking={hideThinking}
-            streamingThinking={streamingThinking}
-            isLoading={busy}
             expanded={expandedTranscript}
           />
         )}
@@ -557,18 +577,21 @@ export function App({
           </Box>
         )}
         <SlashSuggestions suggestions={slashSuggestions} />
-        <Box width="100%" marginTop={1} paddingLeft={1}>
-          <MultilineInput
-            onSubmit={onSubmit}
-            onChange={setCurrentInput}
-            showCursor={!busy}
-            busy={busy}
-            history={inputHistory}
-          />
-        </Box>
+        {!permissionRequest ? (
+          <Box width="100%" marginTop={1} paddingLeft={1}>
+            <MultilineInput
+              onSubmit={onSubmit}
+              onChange={setCurrentInput}
+              showCursor={!busy}
+              busy={busy}
+              disabled={busy}
+              history={inputHistory}
+            />
+          </Box>
+        ) : null}
         <PromptFooter
           cwd={cwd}
-          model={model}
+          model={activeModel}
           permissionMode={permissionMode}
           busy={busy}
           inputActive={currentInput.length > 0}
