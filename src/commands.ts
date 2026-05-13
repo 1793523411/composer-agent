@@ -72,6 +72,10 @@ export const SLASH_HELP: string = [
   "快捷键:",
   "  Ctrl+O — 展开/收起 transcript 里的工具详情",
   "",
+  "输入:",
+  "  Agent 工作中也可以继续输入，消息会排队到当前回合结束后发送",
+  "  图片用 @/path/to/image.png 附加；路径有空格时用 @\"/path with spaces.png\"",
+  "",
   "可用命令:",
   ...[
     ...commands.map((c) => ({ name: c.name, description: c.description })),
@@ -175,6 +179,77 @@ export function stripBang(input: string): string {
 export interface BangResult {
   ok: boolean;
   out: string;
+}
+
+const SOURCE_VIEW_COMMANDS = new Set(["bat", "cat", "head", "less", "sed", "tail"]);
+const SOURCE_VIEW_LINE_LIMIT = 14;
+const BANG_OUTPUT_LINE_LIMIT = 24;
+
+const LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  cjs: "js",
+  css: "css",
+  html: "html",
+  js: "js",
+  json: "json",
+  jsonc: "json",
+  jsx: "jsx",
+  md: "md",
+  mjs: "js",
+  sh: "sh",
+  ts: "ts",
+  tsx: "tsx",
+  yaml: "yaml",
+  yml: "yaml",
+};
+
+export function formatBangOutputForDisplay(cmd: string, output: string): string {
+  if (!output.trim() || output.includes("```")) return output;
+
+  const language = inferSourceViewLanguage(cmd);
+  const displayOutput = limitOutputLines(output, language ? SOURCE_VIEW_LINE_LIMIT : BANG_OUTPUT_LINE_LIMIT);
+  if (!language) return displayOutput;
+
+  return [`\`\`\`${language}`, displayOutput, "```"].join("\n");
+}
+
+function inferSourceViewLanguage(cmd: string): string {
+  if (!isSourceViewCommand(cmd)) return "";
+
+  const path = sourcePathFromCommand(cmd);
+  if (!path) return "";
+
+  const extension = path.split(".").pop()?.toLowerCase() ?? "";
+  return LANGUAGE_BY_EXTENSION[extension] ?? "";
+}
+
+function isSourceViewCommand(cmd: string): boolean {
+  const match = cmd.trim().match(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*([^\s]+)/);
+  if (!match?.[1]) return false;
+
+  const commandName = match[1].split(/[\\/]/).pop() ?? match[1];
+  return SOURCE_VIEW_COMMANDS.has(commandName);
+}
+
+function sourcePathFromCommand(cmd: string): string {
+  const extensions = Object.keys(LANGUAGE_BY_EXTENSION).join("|");
+  const pathPattern = new RegExp(`(?:^|\\s|['"])([^\\s'"]+\\.(${extensions}))(?:$|\\s|['"])`, "gi");
+  let path = "";
+
+  for (const match of cmd.matchAll(pathPattern)) {
+    path = match[1] ?? path;
+  }
+
+  return path;
+}
+
+function limitOutputLines(output: string, limit: number): string {
+  const lines = output.split("\n");
+  if (lines.length <= limit) return output;
+
+  return [
+    ...lines.slice(0, limit),
+    `... ${lines.length - limit} more lines`,
+  ].join("\n");
 }
 
 export function runBangCommand(cwd: string, cmd: string): Promise<BangResult> {

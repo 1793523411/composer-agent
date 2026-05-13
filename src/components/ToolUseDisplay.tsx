@@ -211,6 +211,52 @@ function formatExpandedText(toolName: string, value: string): string[] {
   ];
 }
 
+function isReadTool(toolName: string): boolean {
+  const name = toolName.toLowerCase();
+  return name === "read" || name === "read_file";
+}
+
+function inputPath(input: Record<string, unknown> | undefined): string {
+  if (!input) return "";
+
+  for (const key of ["path", "file_path", "filePath"]) {
+    const value = input[key];
+    if (typeof value === "string") return value;
+  }
+
+  return "";
+}
+
+function inferLanguageFromPath(path: string): string {
+  const filename = path.split(/[\\/]/).pop() ?? path;
+  const extension = filename.split(".").pop()?.toLowerCase() ?? "";
+  const languagesByExtension: Record<string, string> = {
+    cjs: "js",
+    css: "css",
+    html: "html",
+    js: "js",
+    json: "json",
+    jsonc: "json",
+    jsx: "jsx",
+    md: "md",
+    mjs: "js",
+    sh: "sh",
+    ts: "ts",
+    tsx: "tsx",
+    yaml: "yaml",
+    yml: "yaml",
+  };
+
+  return languagesByExtension[extension] ?? "";
+}
+
+function formatExpandedMarkdown(toolName: string, input: Record<string, unknown> | undefined, lines: string[]): string {
+  if (!isReadTool(toolName)) return lines.join("\n");
+
+  const language = inferLanguageFromPath(inputPath(input));
+  return [`\`\`\`${language}`, ...lines, "```"].join("\n");
+}
+
 export function ToolUseDisplay({
   toolName,
   status,
@@ -226,6 +272,9 @@ export function ToolUseDisplay({
   const label = displayToolName(toolName);
   const expandedOutput = expanded && status === "done" && output ? formatExpandedText(toolName, output) : [];
   const expandedError = expanded && status === "error" && error ? formatExpandedText(toolName, error) : [];
+  const expandedOutputText = expandedOutput.length > 0
+    ? formatExpandedMarkdown(toolName, input, expandedOutput)
+    : "";
   const detailColumns = Math.max(20, columns - 5);
 
   const [startTime] = useState(() => Date.now());
@@ -259,7 +308,7 @@ export function ToolUseDisplay({
 
       {expandedOutput.length > 0 && (
         <Box flexDirection="column" paddingLeft={5}>
-          <MarkdownText columns={detailColumns} dimColor>{expandedOutput.join("\n")}</MarkdownText>
+          <MarkdownText columns={detailColumns} dimColor>{expandedOutputText}</MarkdownText>
         </Box>
       )}
 

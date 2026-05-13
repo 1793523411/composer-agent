@@ -7,6 +7,7 @@ export interface MultilineInputProps {
   showCursor?: boolean;
   busy?: boolean;
   disabled?: boolean;
+  placeholder?: string;
   history?: string[];
 }
 
@@ -16,6 +17,7 @@ export function MultilineInput({
   showCursor = true,
   busy = false,
   disabled = false,
+  placeholder = "Ask about code, edits, tests, or plans",
   history = [],
 }: MultilineInputProps) {
   useFocus({ autoFocus: true });
@@ -26,14 +28,14 @@ export function MultilineInput({
     return () => { process.stdout.write("\x1b[?25l"); };
   }, []);
 
-  // busy 时隐藏光标，idle 时恢复
+  // 禁用或显式隐藏时收起终端光标，否则保持可输入状态。
   useEffect(() => {
-    if (busy) {
+    if (disabled || !showCursor) {
       process.stdout.write("\x1b[?25l");
     } else {
       process.stdout.write("\x1b[?25h");
     }
-  }, [busy]);
+  }, [disabled, showCursor]);
 
   const [text, setTextRaw] = useState("");
   const [cursorOffset, setCursorOffset] = useState(0);
@@ -178,7 +180,16 @@ export function MultilineInput({
   );
 
   // 渲染
-  const prompt = <Text color={busy ? undefined : "yellow"} dimColor={busy}>{"\u276F"} </Text>;
+  const prompt = (
+    <Box minWidth={2} flexShrink={0}>
+      <Text color={busy ? undefined : "yellow"} dimColor={busy}>{"\u276F"}</Text>
+    </Box>
+  );
+  const continuationPrompt = (
+    <Box minWidth={2} flexShrink={0}>
+      <Text> </Text>
+    </Box>
+  );
   const borderColor = busy ? "gray" : "yellow";
 
   if (text.length === 0) {
@@ -196,7 +207,7 @@ export function MultilineInput({
         {prompt}
         {showCursor ? <Text inverse> </Text> : null}
         <Box flexShrink={1}>
-          <Text dimColor wrap="truncate-end">{showCursor ? "  " : ""}Ask about code, edits, tests, or plans</Text>
+          <Text dimColor wrap="truncate-end">{showCursor ? "  " : ""}{placeholder}</Text>
         </Box>
       </Box>
     );
@@ -229,7 +240,7 @@ export function MultilineInput({
     >
       {lines.map((line, i) => (
         <Box key={i} flexDirection="row">
-          {i === 0 ? prompt : <Text>  </Text>}
+          {i === 0 ? prompt : continuationPrompt}
           <Text>
             {i === cursorLine && showCursor ? (
               <>

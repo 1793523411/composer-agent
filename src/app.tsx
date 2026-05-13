@@ -6,6 +6,7 @@ import { Agent, type Run } from "@cursor/sdk";
 const SPINNER_FRAMES = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
 import { TranscriptView } from "./components/TranscriptView.js";
 import {
+  formatBangOutputForDisplay,
   handleSlashCommand,
   isBangCommand,
   runBangCommand,
@@ -24,6 +25,7 @@ import { SlashSuggestions } from "./components/SlashSuggestions.js";
 import { loadConfig, getConfig } from "./config.js";
 import { saveSession, loadLastSession, createSessionId, type SessionMessage } from "./session.js";
 import { MultilineInput } from "./components/MultilineInput.js";
+import { prepareUserPrompt, type PreparedUserPrompt } from "./lib/userPrompt.js";
 
 type Props = {
   cwd: string;
@@ -102,6 +104,10 @@ export function App({
   const [currentInput, setCurrentInput] = useState("");
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [activeModel, setActiveModel] = useState(model);
+  const agentRunningRef = useRef(false);
+  const pendingPromptsRef = useRef<PreparedUserPrompt[]>([]);
+  const runAgentPromptRef = useRef<((prompt: PreparedUserPrompt, appendUser: boolean) => Promise<void>) | null>(null);
+  const [queuedPromptCount, setQueuedPromptCount] = useState(0);
   const allowedToolsKey = allowedTools.join(",");
 
   useEffect(() => {
@@ -302,27 +308,27 @@ export function App({
   );
 
   const runAgentPrompt = useCallback(
-    async (text: string) => {
+    async (prompt: PreparedUserPrompt, appendUserItem = true) => {
       const agent = agentRef.current;
-      if (!agent || !text) return;
+      if (!agent) {
+        appendItem({ kind: "system", id: nextId(), text: "Agent 尚未就绪，请稍后再试。" });
+        return;
+      }
 
-      const config = getConfig();
-      // 如果有 systemPrompt，拼接到消息前面
-      const messageText = config.systemPrompt
-        ? `[System: ${config.systemPrompt}]\n\n${text}`
-        : text;
-
-      appendItem({ kind: "user", id: nextId(), text });
-      sessionMessagesRef.current.push({ role: "user", content: text, timestamp: Date.now() });
+      if (appendUserItem) {
+        appendItem({ kind: "user", id: nextId(), text: prompt.displayText });
+      }
+      sessionMessagesRef.current.push({ role: "user", content: prompt.sessionText, timestamp: Date.now() });
 
       let currentAssistantId: string | null = null;
       const thinkingIdRef = { current: null as string | null };
       let assistantText = "";
+      agentRunningRef.current = true;
       setBusy(true);
-      setFooterHint("waiting for model");
+      setFooterHint(prompt.imageCount > 0 ? `sending ${prompt.imageCount} image${prompt.imageCount > 1 ? "s" : ""}` : "waiting for model");
 
       try {
-        const run: Run = await agent.send(messageText, {
+        const run: Run = await agent.send(prompt.message, {
           onDelta: ({ update }) => {
             const early = extractEarlyToolUpdate(update);
             if (early) {
@@ -385,13 +391,24 @@ export function App({
           appendItem({ kind: "assistant", id: nextId(), text: `[error] ${msg}` });
         }
       } finally {
-        setBusy(false);
-        setFooterHint(null);
         persistSession();
+        const nextPrompt = pendingPromptsRef.current.shift();
+        setQueuedPromptCount(pendingPromptsRef.current.length);
+        if (nextPrompt) {
+          void runAgentPromptRef.current?.(nextPrompt, false);
+        } else {
+          agentRunningRef.current = false;
+          setBusy(false);
+          setFooterHint(null);
+        }
       }
     },
     [appendItem, updateAssistant, updateThinking, upsertTool, persistSession],
   );
+
+  useEffect(() => {
+    runAgentPromptRef.current = runAgentPrompt;
+  }, [runAgentPrompt]);
 
   const onSubmit = useCallback(
     (value: string) => {
@@ -489,6 +506,14 @@ export function App({
           appendItem({ kind: "system", id: nextId(), text: "用法：!git status  （! 后面跟一条 shell）" });
           return;
         }
+        if (agentRunningRef.current) {
+          appendItem({
+            kind: "system",
+            id: nextId(),
+            text: "Agent 正在工作中，shell 命令请等当前回合结束后再运行；普通消息会自动排队。",
+          });
+          return;
+        }
         void (async () => {
           appendItem({ kind: "user", id: nextId(), text: `! ${cmd}` });
           setBusy(true);
@@ -499,15 +524,34 @@ export function App({
           appendItem({
             kind: "system",
             id: nextId(),
-            text: r.ok ? r.out : `退出非 0 或失败：\n${r.out}`,
+            text: r.ok ? formatBangOutputForDisplay(cmd, r.out) : `退出非 0 或失败：\n${r.out}`,
           });
         })();
         return;
       }
 
-      void runAgentPrompt(v);
+      if (busy && !agentRunningRef.current) {
+        appendItem({ kind: "system", id: nextId(), text: "当前 shell 命令仍在运行，结束后再发送消息。" });
+        return;
+      }
+
+      const prepared = prepareUserPrompt(v, cwd, getConfig().systemPrompt);
+      if (!prepared.ok) {
+        appendItem({ kind: "system", id: nextId(), text: prepared.error });
+        return;
+      }
+
+      if (agentRunningRef.current) {
+        appendItem({ kind: "user", id: nextId(), text: prepared.prompt.displayText });
+        pendingPromptsRef.current.push(prepared.prompt);
+        setQueuedPromptCount(pendingPromptsRef.current.length);
+        setFooterHint(`queued ${pendingPromptsRef.current.length}`);
+        return;
+      }
+
+      void runAgentPrompt(prepared.prompt);
     },
-    [activeModel, appendItem, cwd, exit, persistSession, runAgentPrompt],
+    [activeModel, appendItem, busy, cwd, exit, persistSession, runAgentPrompt],
   );
 
   const slashSuggestions = !busy && currentInput.startsWith("/")
@@ -573,7 +617,11 @@ export function App({
       <Box flexDirection="column" flexShrink={0}>
         {busy && (
           <Box paddingLeft={3}>
-            <Text color={getSpinnerColor(busyElapsed)}>{SPINNER_FRAMES[spinnerIdx]} {formatElapsed(busyElapsed)}{footerHint ? ` · ${footerHint}` : ""}</Text>
+            <Text color={getSpinnerColor(busyElapsed)}>
+              {SPINNER_FRAMES[spinnerIdx]} {formatElapsed(busyElapsed)}
+              {footerHint ? ` · ${footerHint}` : ""}
+              {queuedPromptCount > 0 && footerHint?.startsWith("queued") !== true ? ` · queued ${queuedPromptCount}` : ""}
+            </Text>
           </Box>
         )}
         <SlashSuggestions suggestions={slashSuggestions} />
@@ -582,9 +630,10 @@ export function App({
             <MultilineInput
               onSubmit={onSubmit}
               onChange={setCurrentInput}
-              showCursor={!busy}
-              busy={busy}
-              disabled={busy}
+              showCursor
+              busy={false}
+              disabled={false}
+              placeholder={agentRunningRef.current ? "Queue next message, or attach @image.png" : "Ask about code, edits, tests, or @image.png"}
               history={inputHistory}
             />
           </Box>
